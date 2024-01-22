@@ -117,7 +117,7 @@ function init() {
     }
 }
 
-export async function silkEncode(input: Uint8Array, sampleRate: number) {
+export async function silkEncode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     init()
     const permit = await semaphore.acquire()
     return postMessage<encodeResult>({ type: 'encode', input, sampleRate }).finally(() => {
@@ -126,13 +126,13 @@ export async function silkEncode(input: Uint8Array, sampleRate: number) {
     })
 }
 
-export async function silkDecode(input: Uint8Array, sampleRate: number) {
+export async function silkDecode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     init()
     const permit = await semaphore.acquire()
     return postMessage<decodeResult>({ type: 'decode', input, sampleRate }).finally(() => permit.release())
 }
 
-export async function silkGetDuration(silk: Uint8Array, frameMs = 20) {
+export async function silkGetDuration(silk: ArrayBufferView | ArrayBuffer, frameMs = 20) {
     init()
     const permit = await semaphore.acquire()
     return postMessage<number>({ type: 'getDuration', silk, frameMs }).finally(() => permit.release())

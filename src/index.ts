@@ -1,5 +1,6 @@
 import { Context, Schema, Service } from 'koishi'
 import { silkEncode, silkDecode, silkGetDuration } from './worker'
+import { isWav } from 'silk-wasm'
 
 declare module 'koishi' {
   interface Context {
@@ -12,18 +13,22 @@ class SILK extends Service {
     super(ctx, 'silk')
   }
 
-  /** `input` 为单声道 pcm_s16le, `samplingRate` 为 `input` 的采样率 */
-  encode(input: Uint8Array, sampleRate: number) {
+  /** `input` 为 wav 或单声道 pcm_s16le, `samplingRate` 为 `input` 的采样率 */
+  encode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     return silkEncode(input, sampleRate)
   }
 
   /** `input` 为 silk, `samplingRate` 为 `input` 的采样率 */
-  decode(input: Uint8Array, sampleRate: number) {
+  decode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     return silkDecode(input, sampleRate)
   }
-  
-  getDuration(silk: Uint8Array, frameMs = 20) {
+
+  getDuration(silk: ArrayBufferView | ArrayBuffer, frameMs = 20) {
     return silkGetDuration(silk, frameMs)
+  }
+
+  isWav(fileData: ArrayBufferView | ArrayBuffer) {
+    return isWav(fileData)
   }
 }
 
