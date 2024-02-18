@@ -33,16 +33,6 @@ if (!isMainThread && parentPort) {
                     port.close()
                 })
                 break
-            case "getDuration":
-                let ret: number
-                try {
-                    ret = getDuration(data.silk, data.frameMs)
-                } catch (err) {
-                    ret = err
-                }
-                port.postMessage(ret)
-                port.close()
-                break
             default:
                 port.postMessage(undefined)
                 port.close()
@@ -130,10 +120,4 @@ export async function silkDecode(input: ArrayBufferView | ArrayBuffer, sampleRat
     init()
     const permit = await semaphore.acquire()
     return postMessage<decodeResult>({ type: 'decode', input, sampleRate }).finally(() => permit.release())
-}
-
-export async function silkGetDuration(silk: ArrayBufferView | ArrayBuffer, frameMs = 20) {
-    init()
-    const permit = await semaphore.acquire()
-    return postMessage<number>({ type: 'getDuration', silk, frameMs }).finally(() => permit.release())
 }

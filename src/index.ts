@@ -1,6 +1,6 @@
 import { Context, Schema, Service } from 'koishi'
-import { silkEncode, silkDecode, silkGetDuration } from './worker'
-import { isWav } from 'silk-wasm'
+import { silkEncode, silkDecode } from './worker'
+import { isWav, getDuration } from 'silk-wasm'
 
 declare module 'koishi' {
   interface Context {
@@ -24,7 +24,7 @@ class SILK extends Service {
   }
 
   getDuration(silk: ArrayBufferView | ArrayBuffer, frameMs = 20) {
-    return silkGetDuration(silk, frameMs)
+    return getDuration(silk, frameMs)
   }
 
   isWav(fileData: ArrayBufferView | ArrayBuffer) {
