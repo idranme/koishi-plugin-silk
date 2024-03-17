@@ -1,6 +1,6 @@
-import { encode, decode, getDuration, encodeResult, decodeResult } from 'silk-wasm'
+import { encode, decode, encodeResult, decodeResult } from 'silk-wasm'
 import { isMainThread, parentPort, Worker, MessageChannel } from 'node:worker_threads'
-import { Dict, sleep } from 'koishi'
+import { Dict } from 'koishi'
 import { availableParallelism } from 'node:os'
 import { Semaphore } from '@shopify/semaphore'
 
@@ -41,8 +41,7 @@ if (!isMainThread && parentPort) {
 }
 
 const workers: WorkerInstance[] = []
-let maxThreads = 1
-let lastTime = 0, used = 0
+let used = 0
 
 function postMessage<T extends any>(data: Dict): Promise<T> {
     let indexing = 0
@@ -76,25 +75,16 @@ function postMessage<T extends any>(data: Dict): Promise<T> {
     return new Promise((resolve, reject) => {
         port.once('message', async (ret) => {
             port.close()
-            const isError = ret instanceof Error
-            if (!isError && data.type === 'encode') {
-                const interval = Date.now() - lastTime
-                const sizeInMB = ret.data.length / 1_048_576
-                const minInterval = sizeInMB * 1300
-                if (interval < minInterval) {
-                    await sleep(minInterval - interval)
-                }
-            }
-            if (used > maxThreads - 1) {
+            if (used > 1) {
                 workers[indexing].worker.terminate()
                 workers[indexing] = undefined
                 used--
             } else {
                 workers[indexing].busy = false
             }
-            isError ? reject(ret) : resolve(ret)
+            ret instanceof Error ? reject(ret) : resolve(ret)
         })
-        workers[indexing].worker.postMessage({ port: subChannel.port1, data: data }, [subChannel.port1])
+        workers[indexing].worker.postMessage({ port: subChannel.port1, data }, [subChannel.port1])
     })
 }
 
@@ -102,7 +92,7 @@ let semaphore: Semaphore
 
 function init() {
     if (!semaphore) {
-        maxThreads = Math.min(availableParallelism(), 2)
+        const maxThreads = Math.min(availableParallelism(), 3)
         semaphore = new Semaphore(maxThreads)
     }
 }
@@ -110,10 +100,7 @@ function init() {
 export async function silkEncode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     init()
     const permit = await semaphore.acquire()
-    return postMessage<encodeResult>({ type: 'encode', input, sampleRate }).finally(() => {
-        lastTime = Date.now()
-        permit.release()
-    })
+    return postMessage<encodeResult>({ type: 'encode', input, sampleRate }).finally(() => permit.release())
 }
 
 export async function silkDecode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {

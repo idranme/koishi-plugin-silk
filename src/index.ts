@@ -9,7 +9,7 @@ declare module 'koishi' {
 }
 
 class SILK extends Service {
-  constructor(ctx: Context, private config: SILK.Config) {
+  constructor(ctx: Context, config: SILK.Config) {
     super(ctx, 'silk')
   }
 
