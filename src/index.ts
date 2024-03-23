@@ -13,12 +13,12 @@ class SILK extends Service {
     super(ctx, 'silk')
   }
 
-  /** `input` 为 wav 或单声道 pcm_s16le, `samplingRate` 为 `input` 的采样率 */
+  /** `input` 为 wav 或单声道 pcm_s16le, `sampleRate` 为 `input` 的采样率 */
   encode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     return silkEncode(input, sampleRate)
   }
 
-  /** `input` 为 silk, `samplingRate` 为 `input` 的采样率 */
+  /** `input` 为 silk, `sampleRate` 为 `input` 的采样率 */
   decode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
     return silkDecode(input, sampleRate)
   }
