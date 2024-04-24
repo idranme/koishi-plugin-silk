@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-silk",
   "description": "SILK Audio Encoding Service",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -9,14 +9,9 @@
     "dist"
   ],
   "license": "MIT",
-  "author": {
-    "email": "idanran@outlook.com",
-    "name": "idanran",
-    "url": "https://github.com/idanran"
-  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/idanran/koishi-plugin-silk.git"
+    "url": "https://github.com/idranme/koishi-plugin-silk.git"
   },
   "keywords": [
     "chatbot",
@@ -30,7 +25,7 @@
   },
   "dependencies": {
     "@shopify/semaphore": "^3.0.2",
-    "silk-wasm": "^3.3.4"
+    "silk-wasm": "^3.4.0"
   },
   "koishi": {
     "description": {

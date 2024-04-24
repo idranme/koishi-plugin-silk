@@ -43,7 +43,7 @@ if (!isMainThread && parentPort) {
 const workers: WorkerInstance[] = []
 let used = 0
 
-function postMessage<T extends any>(data: Dict): Promise<T> {
+function postMessage<T extends Dict>(data: Dict): Promise<T> {
     let indexing = 0
     if (workers.length === 0) {
         workers.push({
