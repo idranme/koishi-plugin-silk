@@ -1,6 +1,5 @@
-import { encode, decode, encodeResult, decodeResult } from 'silk-wasm'
+import { encode, decode, EncodeResult, DecodeResult } from 'silk-wasm'
 import { isMainThread, parentPort, Worker, MessageChannel } from 'node:worker_threads'
-import { Dict } from 'koishi'
 import { availableParallelism } from 'node:os'
 import { Semaphore } from '@shopify/semaphore'
 
@@ -9,13 +8,18 @@ interface WorkerInstance {
     busy: boolean
 }
 
+interface Data {
+    type: string
+    params: [input: ArrayBufferView | ArrayBuffer, sampleRate: number]
+}
+
 if (!isMainThread && parentPort) {
     parentPort.addListener('message', (e) => {
-        const data: Dict = e.data
+        const data: Data = e.data
         const port: MessagePort = e.port
-        switch (data?.type) {
-            case "encode":
-                encode(data.input, data.sampleRate)
+        switch (data.type) {
+            case 'encode':
+                encode(...data.params)
                     .then(ret => {
                         port.postMessage(ret)
                     }).catch(err => {
@@ -24,8 +28,8 @@ if (!isMainThread && parentPort) {
                         port.close()
                     })
                 break
-            case "decode":
-                decode(data.input, data.sampleRate).then(ret => {
+            case 'decode':
+                decode(...data.params).then(ret => {
                     port.postMessage(ret)
                 }).catch(err => {
                     port.postMessage(err)
@@ -43,38 +47,37 @@ if (!isMainThread && parentPort) {
 const workers: WorkerInstance[] = []
 let used = 0
 
-function postMessage<T extends Dict>(data: Dict): Promise<T> {
-    let indexing = 0
-    if (workers.length === 0) {
-        workers.push({
-            worker: new Worker(__filename),
-            busy: false
-        })
-        used++
-    } else {
-        let found = false
-        for (const [index, value] of workers.entries()) {
-            if (value?.busy === false) {
-                indexing = index
-                found = true
-                break
-            }
-        }
-        if (!found) {
-            const len = workers.push({
+function postMessage(data: Data): Promise<any> {
+    return new Promise((resolve, reject) => {
+        let indexing = 0
+        if (workers.length === 0) {
+            workers.push({
                 worker: new Worker(__filename),
                 busy: false
             })
             used++
-            indexing = len - 1
+        } else {
+            let found = false
+            for (const [index, value] of workers.entries()) {
+                if (value?.busy === false) {
+                    indexing = index
+                    found = true
+                    break
+                }
+            }
+            if (!found) {
+                const len = workers.push({
+                    worker: new Worker(__filename),
+                    busy: false
+                })
+                used++
+                indexing = len - 1
+            }
         }
-    }
-    workers[indexing].busy = true
-    const subChannel = new MessageChannel()
-    const port = subChannel.port2
-    return new Promise((resolve, reject) => {
-        port.once('message', async (ret) => {
-            port.close()
+        workers[indexing].busy = true
+        const { port1, port2 } = new MessageChannel()
+        port2.once('message', async (ret) => {
+            port2.close()
             if (used > 1) {
                 workers[indexing].worker.terminate()
                 workers[indexing] = undefined
@@ -84,7 +87,7 @@ function postMessage<T extends Dict>(data: Dict): Promise<T> {
             }
             ret instanceof Error ? reject(ret) : resolve(ret)
         })
-        workers[indexing].worker.postMessage({ port: subChannel.port1, data }, [subChannel.port1])
+        workers[indexing].worker.postMessage({ port: port1, data }, [port1])
     })
 }
 
@@ -97,14 +100,14 @@ function init() {
     }
 }
 
-export async function silkEncode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
+export async function silkEncode(...args: Parameters<typeof encode>): Promise<EncodeResult> {
     init()
     const permit = await semaphore.acquire()
-    return postMessage<encodeResult>({ type: 'encode', input, sampleRate }).finally(() => permit.release())
+    return postMessage({ type: 'encode', params: args }).finally(() => permit.release())
 }
 
-export async function silkDecode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
+export async function silkDecode(...args: Parameters<typeof decode>): Promise<DecodeResult> {
     init()
     const permit = await semaphore.acquire()
-    return postMessage<decodeResult>({ type: 'decode', input, sampleRate }).finally(() => permit.release())
+    return postMessage({ type: 'decode', params: args }).finally(() => permit.release())
 }
