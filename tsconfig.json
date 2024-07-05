@@ -16,7 +16,8 @@
     "types": [
       "node",
       "yml-register/types"
-    ]
+    ],
+    "strictBindCallApply": true
   },
   "include": [
     "src"

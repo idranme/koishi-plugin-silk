@@ -1,12 +1,6 @@
 import { encode, decode, EncodeResult, DecodeResult } from 'silk-wasm'
 import { isMainThread, parentPort, Worker, MessageChannel } from 'node:worker_threads'
-import { availableParallelism } from 'node:os'
-import { Semaphore } from '@shopify/semaphore'
-
-interface WorkerInstance {
-    worker: Worker
-    busy: boolean
-}
+import SILK from './index'
 
 interface Data {
     type: string
@@ -38,27 +32,24 @@ if (!isMainThread && parentPort) {
                 })
                 break
             default:
-                port.postMessage(undefined)
+                port.postMessage(new Error('unsupported'))
                 port.close()
         }
     })
 }
 
-const workers: WorkerInstance[] = []
-let used = 0
-
-function postMessage(data: Data): Promise<any> {
+function postMessage(this: SILK, data: Data): Promise<any> {
     return new Promise((resolve, reject) => {
         let indexing = 0
-        if (workers.length === 0) {
-            workers.push({
+        if (this.workers.length === 0) {
+            this.workers.push({
                 worker: new Worker(__filename),
                 busy: false
             })
-            used++
+            this.workerUsed++
         } else {
             let found = false
-            for (const [index, value] of workers.entries()) {
+            for (const [index, value] of this.workers.entries()) {
                 if (value?.busy === false) {
                     indexing = index
                     found = true
@@ -66,48 +57,36 @@ function postMessage(data: Data): Promise<any> {
                 }
             }
             if (!found) {
-                const len = workers.push({
+                const len = this.workers.push({
                     worker: new Worker(__filename),
                     busy: false
                 })
-                used++
+                this.workerUsed++
                 indexing = len - 1
             }
         }
-        workers[indexing].busy = true
+        this.workers[indexing].busy = true
         const { port1, port2 } = new MessageChannel()
         port2.once('message', async (ret) => {
-            port2.close()
-            if (used > 1) {
-                workers[indexing].worker.terminate()
-                workers[indexing] = undefined
-                used--
+            if (this.workerUsed > 1) {
+                this.workers[indexing].worker.terminate()
+                delete this.workers[indexing]
+                this.workerUsed--
             } else {
-                workers[indexing].busy = false
+                this.workers[indexing].busy = false
             }
             ret instanceof Error ? reject(ret) : resolve(ret)
         })
-        workers[indexing].worker.postMessage({ port: port1, data }, [port1])
+        this.workers[indexing].worker.postMessage({ port: port1, data }, [port1])
     })
 }
 
-let semaphore: Semaphore
-
-function init() {
-    if (!semaphore) {
-        const maxThreads = Math.min(availableParallelism(), 3)
-        semaphore = new Semaphore(maxThreads)
-    }
+export async function silkEncode(this: SILK, ...args: Parameters<typeof encode>): Promise<EncodeResult> {
+    const permit = await this.semaphore.acquire()
+    return postMessage.call(this, { type: 'encode', params: args }).finally(() => permit.release())
 }
 
-export async function silkEncode(...args: Parameters<typeof encode>): Promise<EncodeResult> {
-    init()
-    const permit = await semaphore.acquire()
-    return postMessage({ type: 'encode', params: args }).finally(() => permit.release())
-}
-
-export async function silkDecode(...args: Parameters<typeof decode>): Promise<DecodeResult> {
-    init()
-    const permit = await semaphore.acquire()
-    return postMessage({ type: 'decode', params: args }).finally(() => permit.release())
+export async function silkDecode(this: SILK, ...args: Parameters<typeof decode>): Promise<DecodeResult> {
+    const permit = await this.semaphore.acquire()
+    return postMessage.call(this, { type: 'decode', params: args }).finally(() => permit.release())
 }

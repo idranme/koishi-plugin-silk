@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-silk",
   "description": "SILK Audio Encoding Service",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -18,14 +18,15 @@
     "koishi",
     "plugin",
     "silk",
-    "service"
+    "service",
+    "audio"
   ],
   "peerDependencies": {
     "koishi": "^4.17.7"
   },
   "dependencies": {
     "@shopify/semaphore": "^3.1.0",
-    "silk-wasm": "^3.6.0"
+    "silk-wasm": "^3.6.1"
   },
   "koishi": {
     "description": {

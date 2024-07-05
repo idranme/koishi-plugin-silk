@@ -1,6 +1,9 @@
 import { Context, Schema, Service } from 'koishi'
 import { silkEncode, silkDecode } from './worker'
 import { isWav, getDuration, getWavFileInfo, isSilk } from 'silk-wasm'
+import { Semaphore } from '@shopify/semaphore'
+import { availableParallelism } from 'node:os'
+import { Worker } from 'node:worker_threads'
 
 declare module 'koishi' {
   interface Context {
@@ -8,9 +11,20 @@ declare module 'koishi' {
   }
 }
 
+interface WorkerInstance {
+  worker: Worker
+  busy: boolean
+}
+
 class SILK extends Service {
+  protected semaphore: Semaphore
+  protected workers: WorkerInstance[] = []
+  protected workerUsed = 0
+
   constructor(ctx: Context, config: SILK.Config) {
     super(ctx, 'silk')
+    const maxThreads = Math.max(availableParallelism() - 1, 1)
+    this.semaphore = new Semaphore(maxThreads)
   }
 
   /**
@@ -20,7 +34,7 @@ class SILK extends Service {
    * @returns SILK
    */
   encode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
-    return silkEncode(input, sampleRate)
+    return silkEncode.call(this, input, sampleRate)
   }
 
   /**
@@ -30,7 +44,7 @@ class SILK extends Service {
    * @returns pcm_s16le
    */
   decode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
-    return silkDecode(input, sampleRate)
+    return silkDecode.call(this, input, sampleRate)
   }
 
   /**
