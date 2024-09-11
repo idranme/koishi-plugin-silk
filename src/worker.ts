@@ -1,6 +1,6 @@
 import { encode, decode, EncodeResult, DecodeResult } from 'silk-wasm'
 import { isMainThread, parentPort, Worker, MessageChannel } from 'node:worker_threads'
-import SILK from './index'
+import { SilkServiceBase } from './index'
 
 interface Data {
     type: string
@@ -38,7 +38,7 @@ if (!isMainThread && parentPort) {
     })
 }
 
-function postMessage(this: SILK, data: Data): Promise<any> {
+function postMessage(this: SilkServiceBase, data: Data): Promise<any> {
     return new Promise((resolve, reject) => {
         let indexing = 0
         if (this.workers.length === 0) {
@@ -81,12 +81,12 @@ function postMessage(this: SILK, data: Data): Promise<any> {
     })
 }
 
-export async function silkEncode(this: SILK, ...args: Parameters<typeof encode>): Promise<EncodeResult> {
+export async function silkEncode(this: SilkServiceBase, ...args: Parameters<typeof encode>): Promise<EncodeResult> {
     const permit = await this.semaphore.acquire()
     return postMessage.call(this, { type: 'encode', params: args }).finally(() => permit.release())
 }
 
-export async function silkDecode(this: SILK, ...args: Parameters<typeof decode>): Promise<DecodeResult> {
+export async function silkDecode(this: SilkServiceBase, ...args: Parameters<typeof decode>): Promise<DecodeResult> {
     const permit = await this.semaphore.acquire()
     return postMessage.call(this, { type: 'decode', params: args }).finally(() => permit.release())
 }

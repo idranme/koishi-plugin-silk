@@ -1,13 +1,17 @@
-import { Context, Schema, Service } from 'koishi'
+import { Context, Service, Schema, defineProperty } from 'koishi'
 import { silkEncode, silkDecode } from './worker'
 import { isWav, getDuration, getWavFileInfo, isSilk } from 'silk-wasm'
 import { Semaphore } from '@shopify/semaphore'
 import { availableParallelism } from 'node:os'
 import { Worker } from 'node:worker_threads'
+import { Stream } from 'node:stream'
+import { readFile } from 'node:fs/promises'
+import { streamToBuffer, iterableToBuffer, asyncIterableToBuffer } from './utils'
 
 declare module 'koishi' {
   interface Context {
-    silk: SILK
+    silk: SilkService
+    ntsilk: NTSilkService
   }
 }
 
@@ -16,15 +20,81 @@ interface WorkerInstance {
   busy: boolean
 }
 
-class SILK extends Service {
+abstract class SilkServiceBase extends Service {
   protected semaphore: Semaphore
-  protected workers: WorkerInstance[] = []
-  protected workerUsed = 0
+  protected workers: WorkerInstance[]
+  protected workerUsed: number
+}
 
-  constructor(ctx: Context, config: SILK.Config) {
+class NTSilkService extends SilkServiceBase {
+  constructor(ctx: Context) {
+    super(ctx, 'ntsilk')
+    const maxThreads = Math.max(availableParallelism() - 1, 1)
+    defineProperty(this, 'semaphore', new Semaphore(maxThreads))
+    defineProperty(this, 'workers', [])
+    defineProperty(this, 'workerUsed', 0)
+  }
+
+  async encode(
+    input:
+      | string
+      | Buffer
+      | ArrayBuffer
+      | Uint8Array
+      | number[]
+      | Stream
+      | NodeJS.ArrayBufferView
+      | Iterable<string | NodeJS.ArrayBufferView>
+      | AsyncIterable<string | NodeJS.ArrayBufferView>
+  ): Promise<{ output: Buffer, duration: number | undefined }> {
+    let data: Buffer
+    if (typeof input === 'string') {
+      data = await readFile(input)
+    } else if (ArrayBuffer.isView(input)) {
+      data = Buffer.from(input.buffer)
+    } else if (Array.isArray(input)) {
+      data = Buffer.from(input)
+    } else if (Symbol.iterator in input) {
+      data = iterableToBuffer(input)
+    } else if (Symbol.asyncIterator in input) {
+      data = await asyncIterableToBuffer(input)
+    } else if (input instanceof Stream) {
+      data = await streamToBuffer(input)
+    } else {
+      data = Buffer.from(input)
+    }
+    const allowSampleRate = [8000, 12000, 16000, 24000, 32000, 44100, 48000]
+    if (isWav(data) && allowSampleRate.includes(getWavFileInfo(data).fmt.sampleRate)) {
+      const res = await silkEncode.call(this, data, 0)
+      return {
+        output: Buffer.from(res.data),
+        duration: res.duration
+      }
+    }
+    if (!this.ctx.get('ffmpeg')) {
+      throw new Error('missing ffmpeg service, please go to market to install')
+    }
+    const pcmBuf = await this.ctx.get('ffmpeg')
+      .builder()
+      .input(data)
+      .outputOption('-ar', '24000', '-ac', '1', '-f', 's16le')
+      .run('buffer')
+    const res = await silkEncode.call(this, pcmBuf, 24000)
+    return {
+      output: Buffer.from(res.data),
+      duration: res.duration
+    }
+  }
+}
+
+class SilkService extends SilkServiceBase {
+  constructor(ctx: Context) {
     super(ctx, 'silk')
     const maxThreads = Math.max(availableParallelism() - 1, 1)
-    this.semaphore = new Semaphore(maxThreads)
+    defineProperty(this, 'semaphore', new Semaphore(maxThreads))
+    defineProperty(this, 'workers', [])
+    defineProperty(this, 'workerUsed', 0)
+    ctx.plugin(NTSilkService)
   }
 
   /**
@@ -83,9 +153,9 @@ class SILK extends Service {
   }
 }
 
-namespace SILK {
-  export interface Config { }
-  export const Config: Schema<Config> = Schema.object({})
+namespace SilkService {
+  export const Config = Schema.object({})
 }
 
-export default SILK
+export type { SilkServiceBase }
+export default SilkService
