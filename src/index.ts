@@ -126,13 +126,9 @@ class SilkService extends SilkServiceBase {
       const decoder = new MPEGDecoderWebWorker()
       await decoder.ready
       const { channelData, sampleRate } = await decoder.decode(data)
-      const allowSampleRate = [8000, 12000, 16000, 24000, 32000, 44100, 48000]
-      if (allowSampleRate.includes(sampleRate)) {
-        const pcmBuf = ensureS16lePcm(ensureMonoPcm(channelData))
-        decoder.free()
-        return silkEncode.call(this, pcmBuf, sampleRate)
-      }
+      const pcmBuf = ensureS16lePcm(ensureMonoPcm(channelData))
       decoder.free()
+      return silkEncode.call(this, pcmBuf, sampleRate)
     }
     return silkEncode.call(this, data, sampleRate)
   }
