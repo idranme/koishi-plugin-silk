@@ -1,4 +1,4 @@
-import { Context, Service, Schema, defineProperty } from 'koishi'
+import { Context, Service, Schema, defineProperty, Binary } from 'koishi'
 import { silkEncode, silkDecode } from './worker'
 import { isWav, getDuration, getWavFileInfo, isSilk } from 'silk-wasm'
 import { Semaphore } from '@shopify/semaphore'
@@ -6,7 +6,8 @@ import { availableParallelism } from 'node:os'
 import { Worker } from 'node:worker_threads'
 import { Stream } from 'node:stream'
 import { readFile } from 'node:fs/promises'
-import { streamToBuffer, iterableToBuffer, asyncIterableToBuffer } from './utils'
+import { streamToBuffer, iterableToBuffer, asyncIterableToBuffer, isMp3, ensureMonoPcm, ensureS16lePcm } from './utils'
+import { MPEGDecoderWebWorker } from 'mpg123-decoder'
 
 declare module 'koishi' {
   interface Context {
@@ -28,7 +29,7 @@ abstract class SilkServiceBase extends Service {
 
 class NTSilkService extends SilkServiceBase {
   constructor(ctx: Context) {
-    super(ctx, 'ntsilk')
+    super(ctx, 'ntsilk', true)
     const maxThreads = Math.max(availableParallelism() - 1, 1)
     defineProperty(this, 'semaphore', new Semaphore(maxThreads))
     defineProperty(this, 'workers', [])
@@ -63,18 +64,34 @@ class NTSilkService extends SilkServiceBase {
     } else {
       data = Buffer.from(input)
     }
+    const ffmpeg = this.ctx.get('ffmpeg')
     const allowSampleRate = [8000, 12000, 16000, 24000, 32000, 44100, 48000]
-    if (isWav(data) && allowSampleRate.includes(getWavFileInfo(data).fmt.sampleRate)) {
+    if (!ffmpeg && isWav(data) && allowSampleRate.includes(getWavFileInfo(data).fmt.sampleRate)) {
       const res = await silkEncode.call(this, data, 0)
       return {
         output: Buffer.from(res.data),
         duration: res.duration
       }
     }
-    if (!this.ctx.get('ffmpeg')) {
+    if (!ffmpeg && isMp3(data)) {
+      const decoder = new MPEGDecoderWebWorker()
+      await decoder.ready
+      const { channelData, sampleRate } = await decoder.decode(data)
+      if (allowSampleRate.includes(sampleRate)) {
+        const pcmBuf = ensureS16lePcm(ensureMonoPcm(channelData))
+        decoder.free()
+        const res = await silkEncode.call(this, pcmBuf, sampleRate)
+        return {
+          output: Buffer.from(res.data),
+          duration: res.duration
+        }
+      }
+      decoder.free()
+    }
+    if (!ffmpeg) {
       throw new Error('missing ffmpeg service, please go to market to install')
     }
-    const pcmBuf = await this.ctx.get('ffmpeg')
+    const pcmBuf = await ffmpeg
       .builder()
       .input(data)
       .outputOption('-ar', '24000', '-ac', '1', '-f', 's16le')
@@ -89,7 +106,7 @@ class NTSilkService extends SilkServiceBase {
 
 class SilkService extends SilkServiceBase {
   constructor(ctx: Context) {
-    super(ctx, 'silk')
+    super(ctx, 'silk', true)
     const maxThreads = Math.max(availableParallelism() - 1, 1)
     defineProperty(this, 'semaphore', new Semaphore(maxThreads))
     defineProperty(this, 'workers', [])
@@ -99,12 +116,25 @@ class SilkService extends SilkServiceBase {
 
   /**
    * 编码为 SILK
-   * @param input WAV 或单声道 pcm_s16le 文件
+   * @param input WAV 或 MP3 或单声道 pcm_s16le 文件
    * @param sampleRate `input` 的采样率，可为 8000/12000/16000/24000/32000/44100/48000
    * @returns SILK
    */
-  encode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
-    return silkEncode.call(this, input, sampleRate)
+  async encode(input: ArrayBufferView | ArrayBuffer, sampleRate: number) {
+    const data = new Uint8Array(Binary.fromSource(input))
+    if (isMp3(data)) {
+      const decoder = new MPEGDecoderWebWorker()
+      await decoder.ready
+      const { channelData, sampleRate } = await decoder.decode(data)
+      const allowSampleRate = [8000, 12000, 16000, 24000, 32000, 44100, 48000]
+      if (allowSampleRate.includes(sampleRate)) {
+        const pcmBuf = ensureS16lePcm(ensureMonoPcm(channelData))
+        decoder.free()
+        return silkEncode.call(this, pcmBuf, sampleRate)
+      }
+      decoder.free()
+    }
+    return silkEncode.call(this, data, sampleRate)
   }
 
   /**
