@@ -19,8 +19,8 @@ interface DecodeResult {
 
 /**
  * 编码为 SILK
- * @param input WAV 或 MP3 或单声道 pcm_s16le 文件
- * @param sampleRate `input` 的采样率，可为 8000/12000/16000/24000/32000/44100/48000
+ * @param input WAV 或单声道 pcm_s16le 文件
+ * @param sampleRate `input` 的采样率，可为 8000/12000/16000/24000/32000/44100/48000，当 `input` 为 WAV 时可填入 0
  * @returns SILK
  */
 function encode(input: ArrayBufferView | ArrayBuffer, sampleRate: number): Promise<EncodeResult>
